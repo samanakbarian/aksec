@@ -1,0 +1,14 @@
+# Networks that must never be scanned.
+# Add opt-out requests from network operators here (one CIDR per line).
+# Reserved/special-purpose ranges are always excluded in code unless
+# AKSEC_ALLOW_RESERVED=1; they are listed here only for documentation.
+#
+# 0.0.0.0/8         "this" network
+# 10.0.0.0/8        private (RFC 1918)
+# 100.64.0.0/10     carrier-grade NAT
+# 127.0.0.0/8       loopback
+# 169.254.0.0/16    link-local
+# 172.16.0.0/12     private (RFC 1918)
+# 192.168.0.0/16    private (RFC 1918)
+# 224.0.0.0/4       multicast
+# 240.0.0.0/4       reserved
