@@ -19,6 +19,7 @@ from __future__ import annotations
 import ipaddress
 import re
 import shlex
+from datetime import date, datetime
 from dataclasses import dataclass
 
 
@@ -89,6 +90,11 @@ def _compile_term(field: str, value: str, clauses: list[str], params: list[objec
     elif field == "has":
         clauses.append("json_extract(data, '$.' || ?) IS NOT NULL")
         params.append(value)
+    elif field in ("seen_since", "seen_before"):
+        iso = _parse_date(field, value)
+        op = ">=" if field == "seen_since" else "<"
+        clauses.append(f"last_seen {op} ?")
+        params.append(iso)
     else:
         raise QueryError(f"unknown field: {field!r}")
 
@@ -122,6 +128,16 @@ def _parse_port_range(value: str) -> tuple[int, int]:
     if lo > hi:
         raise QueryError(f"port range reversed: {value!r}")
     return lo, hi
+
+
+def _parse_date(field: str, value: str) -> str:
+    """Accept YYYY-MM-DD or a full ISO-8601 timestamp; return a comparable ISO string."""
+    try:
+        if "T" in value:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).isoformat()
+        return date.fromisoformat(value).isoformat()
+    except ValueError as exc:
+        raise QueryError(f"invalid date for {field}: {value!r}") from exc
 
 
 def _like_escape(value: str) -> str:

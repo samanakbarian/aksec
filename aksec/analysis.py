@@ -67,6 +67,10 @@ def analyze_service(row: dict[str, Any]) -> list[Finding]:
     if isinstance(http, dict):
         findings += _analyze_http(ip, port, http)
 
+    ssh = data.get("ssh")
+    if isinstance(ssh, dict):
+        findings += _analyze_ssh(ip, port, ssh)
+
     return findings
 
 
@@ -96,10 +100,34 @@ def _analyze_tls(ip: str, port: int, tls: dict[str, Any]) -> list[Finding]:
 def _analyze_http(ip: str, port: int, http: dict[str, Any]) -> list[Finding]:
     out: list[Finding] = []
     headers = {k.lower(): v for k, v in (http.get("headers") or {}).items()}
-    if port in (80, 8080) and "tls" not in http and http.get("status_code"):
+    status = http.get("status_code")
+    is_tls = "tls" in http or port in (443, 8443)
+
+    if port in (80, 8080) and not is_tls and status:
         out.append(Finding(ip, port, "low", "http-plaintext", "Serving HTTP without TLS"))
     if "server" in headers:
         out.append(Finding(ip, port, "info", "server-banner", f"Server header reveals: {headers['server']}"))
+
+    # Missing transport/content security headers on a responding web server.
+    if status and 200 <= int(status) < 400:
+        if is_tls and "strict-transport-security" not in headers:
+            out.append(Finding(ip, port, "low", "missing-hsts", "No Strict-Transport-Security header"))
+        if "content-security-policy" not in headers:
+            out.append(Finding(ip, port, "info", "missing-csp", "No Content-Security-Policy header"))
+
+    # Directory listing left enabled.
+    title = (http.get("title") or "").lower()
+    body = (http.get("body") or "").lower()
+    if title.startswith("index of /") or "<title>index of /" in body:
+        out.append(Finding(ip, port, "medium", "directory-listing", "Open directory listing is enabled"))
+    return out
+
+
+def _analyze_ssh(ip: str, port: int, ssh: dict[str, Any]) -> list[Finding]:
+    out: list[Finding] = []
+    banner = (ssh.get("banner") or "").lower()
+    if "ssh-1." in banner or banner.startswith("ssh-1"):
+        out.append(Finding(ip, port, "high", "ssh-protocol-1", "SSH protocol 1 is obsolete and insecure"))
     return out
 
 

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nmaprun scanner="nmap" start="1700000000" version="7.94">
+  <host>
+    <status state="up"/>
+    <address addr="198.51.100.77" addrtype="ipv4"/>
+    <ports>
+      <port protocol="tcp" portid="22">
+        <state state="open"/>
+        <service name="ssh" product="OpenSSH" version="9.6p1" method="probed"/>
+      </port>
+      <port protocol="tcp" portid="443">
+        <state state="open"/>
+        <service name="https" product="nginx" version="1.24.0"/>
+      </port>
+      <port protocol="tcp" portid="25">
+        <state state="closed"/>
+        <service name="smtp"/>
+      </port>
+    </ports>
+  </host>
+  <host>
+    <status state="up"/>
+    <address addr="198.51.100.88" addrtype="ipv4"/>
+    <ports>
+      <port protocol="tcp" portid="3389">
+        <state state="open"/>
+        <service name="ms-wbt-server"/>
+      </port>
+    </ports>
+  </host>
+</nmaprun>

@@ -20,15 +20,19 @@ represented only by the ingest contract.
 
 ## Near term (v0.2)
 
+- [x] Historical observations: `first_seen` / `last_seen` per service, with
+      `seen_since:` / `seen_before:` query fields (and a schema migration for
+      pre-0.2 databases)
+- [x] More findings: missing security headers (HSTS/CSP), open directory
+      listings, obsolete SSH protocol 1
+- [x] Export: NDJSON / CSV out (CLI `export` + `GET /api/export`)
+- [x] Collector adapter that *transforms existing tool output* into the ingest
+      contract — nmap XML (`import-nmap`), no scanning logic in this repo
 - [ ] IPv6 support across models, storage and query
-- [ ] Historical observations (keep versions over time; show "first/last seen")
-- [ ] More findings: default credentials indicators, known-vulnerable version
-      ranges, missing security headers (HSTS/CSP), open directory listings
+- [ ] More findings: default-credential indicators, known-vulnerable version
+      ranges
 - [ ] Saved searches and simple alerting ("tell me when a new 3389 appears")
 - [ ] Authentication and per-tenant data isolation on the API
-- [ ] Export: NDJSON / CSV out, not just in
-- [ ] Collector adapter examples that *transform existing tool output* into the
-      ingest contract (no new scanning logic in this repo)
 
 ## Medium term (v0.3+)
 

@@ -45,6 +45,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_find = sub.add_parser("findings", help="list exposure findings")
     _add_db(p_find)
 
+    p_export = sub.add_parser("export", help="export the inventory to NDJSON or CSV")
+    p_export.add_argument("--format", choices=["ndjson", "csv"], default="ndjson")
+    p_export.add_argument("--out", help="output file (default: stdout)")
+    _add_db(p_export)
+
+    p_nmap = sub.add_parser("import-nmap", help="import nmap XML output (no scanning)")
+    p_nmap.add_argument("file", help="path to an nmap XML file ('-' for stdin)")
+    p_nmap.add_argument("--source", default="nmap", help="value for the 'source' field")
+    _add_db(p_nmap)
+
     p_serve = sub.add_parser("serve", help="run the web UI and API")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
@@ -112,6 +122,34 @@ def cmd_findings(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    from .export import export
+
+    with Store(args.db) as store:
+        if args.out:
+            with open(args.out, "w", encoding="utf-8", newline="") as fh:
+                n = export(store, fh, args.format)
+            print(f"exported {n} record(s) to {args.out}", file=sys.stderr)
+        else:
+            n = export(store, sys.stdout, args.format)
+    return 0
+
+
+def cmd_import_nmap(args: argparse.Namespace) -> int:
+    from .adapters.nmap import parse_nmap_xml
+
+    src = sys.stdin if args.file == "-" else open(args.file, "r", encoding="utf-8")
+    try:
+        observations = list(parse_nmap_xml(src, default_source=args.source))
+    finally:
+        if src is not sys.stdin:
+            src.close()
+    with Store(args.db) as store:
+        n = store.bulk_upsert(observations)
+    print(f"imported {n} open service(s) from nmap XML")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -124,16 +162,26 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 _HANDLERS = {
     "import": cmd_import,
+    "import-nmap": cmd_import_nmap,
     "search": cmd_search,
     "stats": cmd_stats,
     "findings": cmd_findings,
+    "export": cmd_export,
     "serve": cmd_serve,
 }
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return _HANDLERS[args.cmd](args)
+    try:
+        return _HANDLERS[args.cmd](args)
+    except BrokenPipeError:
+        # Downstream closed the pipe (e.g. `... | head`); exit quietly.
+        try:
+            sys.stdout.close()
+        except Exception:
+            pass
+        return 0
 
 
 if __name__ == "__main__":

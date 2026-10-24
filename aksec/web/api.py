@@ -12,10 +12,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import io
+
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 from ..analysis import analyze_rows
+from ..export import export as export_inventory
 from ..query import QueryError
 from ..search import search
 from ..storage import Store
@@ -70,6 +73,13 @@ def create_app(db_path: str = "aksec.db") -> FastAPI:
             rows.append(row)
         findings = analyze_rows(rows)[:limit]
         return {"count": len(findings), "findings": [f.to_dict() for f in findings]}
+
+    @app.get("/api/export")
+    def api_export(format: str = Query("ndjson", pattern="^(ndjson|csv)$")) -> PlainTextResponse:
+        buf = io.StringIO()
+        export_inventory(store, buf, format)
+        media = "application/x-ndjson" if format == "ndjson" else "text/csv"
+        return PlainTextResponse(buf.getvalue(), media_type=media)
 
     @app.exception_handler(QueryError)
     def _query_error(_req: Any, exc: QueryError) -> JSONResponse:

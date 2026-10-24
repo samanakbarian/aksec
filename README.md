@@ -22,11 +22,19 @@ pip install -e .
 # Load the demo data
 aksec import examples/sample.ndjson --db demo.db
 
+# Or import from an existing nmap XML file (pure conversion, no scanning)
+aksec import-nmap examples/nmap-sample.xml --db demo.db
+
 # Explore from the command line
 aksec stats     --db demo.db
 aksec search port:443 --db demo.db
 aksec search ip:198.51.100.0/24 --db demo.db
+aksec search "seen_since:2026-01-01" --db demo.db
 aksec findings  --db demo.db
+
+# Export the inventory back out
+aksec export --format csv   --db demo.db --out inventory.csv
+aksec export --format ndjson --db demo.db > inventory.ndjson
 
 # Or run the web UI + API
 aksec serve --db demo.db           # http://127.0.0.1:8000
@@ -44,6 +52,8 @@ aksec serve --db demo.db           # http://127.0.0.1:8000
 | `banner:nginx`  | substring in the banner                  |
 | `source:acme`   | which feed the data came from            |
 | `has:tls`       | a `tls` block is present in the data     |
+| `seen_since:2026-01-01` | last seen on/after a date        |
+| `seen_before:2026-01-01`| last seen before a date          |
 | `nginx 2.4`     | free words → full-text search            |
 
 Terms are AND-ed. Every value is bound as a SQL parameter, so queries cannot
@@ -57,6 +67,7 @@ inject SQL.
 | `GET /api/host/{ip}` | all services on a host + exposure findings|
 | `GET /api/stats`     | counts and top ports/services             |
 | `GET /api/findings`  | advisory exposure findings                |
+| `GET /api/export?format=csv` | export inventory (`ndjson`/`csv`) |
 
 ## Layout
 
@@ -70,6 +81,8 @@ aksec/
   search.py      high-level search
   analysis.py    exposure heuristics (findings)
   ingest.py      NDJSON loader
+  export.py      NDJSON / CSV export
+  adapters/      transform existing tool output (e.g. nmap XML) into the contract
   cli.py         command-line interface
   web/           FastAPI app + single-page UI
 docs/            architecture, roadmap, data schema, ethics

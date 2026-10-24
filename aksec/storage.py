@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS service (
     service     TEXT    NOT NULL DEFAULT 'unknown',
     banner      TEXT,
     observed_at TEXT    NOT NULL,
+    first_seen  TEXT    NOT NULL,
+    last_seen   TEXT    NOT NULL,
     source      TEXT    NOT NULL DEFAULT 'unknown',
     data        TEXT    NOT NULL DEFAULT '{}',
     PRIMARY KEY (ip, port, transport)
@@ -53,7 +55,20 @@ class Store:
         self._lock = threading.RLock()
         register_functions(self._conn)
         self._conn.executescript(SCHEMA)
+        self._migrate()
+        # Created after migration so the column exists on upgraded databases too.
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_service_seen ON service(last_seen)")
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Add history columns to pre-0.2 databases and backfill them."""
+        cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(service)")}
+        for col in ("first_seen", "last_seen"):
+            if col not in cols:
+                # SQLite needs a constant default when adding a NOT NULL column,
+                # so add it nullable and backfill from observed_at.
+                self._conn.execute(f"ALTER TABLE service ADD COLUMN {col} TEXT")
+                self._conn.execute(f"UPDATE service SET {col}=observed_at WHERE {col} IS NULL")
 
     def close(self) -> None:
         self._conn.close()
@@ -85,12 +100,16 @@ class Store:
         with closing(self._conn.cursor()) as cur:
             cur.execute(
                 """
-                INSERT INTO service (ip, port, transport, service, banner, observed_at, source, data)
-                VALUES (:ip, :port, :transport, :service, :banner, :observed_at, :source, :data)
+                INSERT INTO service (ip, port, transport, service, banner,
+                                     observed_at, first_seen, last_seen, source, data)
+                VALUES (:ip, :port, :transport, :service, :banner,
+                        :observed_at, :observed_at, :observed_at, :source, :data)
                 ON CONFLICT(ip, port, transport) DO UPDATE SET
                     service=excluded.service, banner=excluded.banner,
                     observed_at=excluded.observed_at, source=excluded.source,
-                    data=excluded.data
+                    data=excluded.data,
+                    first_seen=MIN(service.first_seen, excluded.observed_at),
+                    last_seen=MAX(service.last_seen, excluded.observed_at)
                 """,
                 {
                     "ip": obs.ip,

@@ -21,7 +21,10 @@ existing tool, a partner feed) is deliberately out of scope for this layer.
 | `data`        | object   | no       | protocol-specific detail (see below)                  |
 
 The primary key is `(ip, port, transport)`: re-importing a fresher record for
-the same tuple **updates in place**.
+the same tuple **updates in place**. The store additionally tracks
+`first_seen` and `last_seen` per service from the `observed_at` values it has
+ingested, so you can query history (`seen_since:`, `seen_before:`) without the
+collector sending anything extra.
 
 ### `data` sub-objects (all optional)
 
@@ -37,7 +40,9 @@ the same tuple **updates in place**.
   },
   "http": {
     "status_code": 200,
-    "headers": { "Server": "nginx/1.24.0" }
+    "headers": { "Server": "nginx/1.24.0" },
+    "title": "Example",
+    "body": "..."
   },
   "ssh": {
     "banner": "SSH-2.0-OpenSSH_9.6"
