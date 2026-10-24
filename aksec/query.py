@@ -1,0 +1,138 @@
+"""A small, safe search query language compiled to parameterised SQL.
+
+Grammar (whitespace-separated terms, implicitly AND-ed)::
+
+    port:443            exact port
+    port:8000-8100      port range
+    service:https       exact service name
+    ip:10.0.0.0/8       host or CIDR membership
+    source:acme-import  exact source
+    banner:nginx        substring match in the banner
+    has:tls             a protocol block is present in `data`
+    nginx               free text -> full-text search over banner + data
+
+Every value becomes a bound parameter, so query strings can never inject SQL.
+"""
+
+from __future__ import annotations
+
+import ipaddress
+import re
+import shlex
+from dataclasses import dataclass
+
+
+class QueryError(ValueError):
+    """Raised when a query string cannot be parsed."""
+
+
+@dataclass
+class CompiledQuery:
+    where: str
+    params: list[object]
+
+
+_TERM = re.compile(r"^(?P<field>[a-z_]+):(?P<value>.+)$")
+# FTS rowids are collected in a subquery; keeps the main WHERE clause simple.
+_FTS_SUBQUERY = "rowid IN (SELECT rowid FROM service_fts WHERE service_fts MATCH ?)"
+
+
+def compile_query(text: str) -> CompiledQuery:
+    text = (text or "").strip()
+    if not text:
+        return CompiledQuery(where="1=1", params=[])
+
+    clauses: list[str] = []
+    params: list[object] = []
+    free_terms: list[str] = []
+
+    try:
+        tokens = shlex.split(text)
+    except ValueError as exc:
+        raise QueryError(f"could not parse query: {exc}") from exc
+
+    for token in tokens:
+        m = _TERM.match(token)
+        if not m:
+            free_terms.append(token)
+            continue
+        field, value = m.group("field"), m.group("value")
+        _compile_term(field, value, clauses, params)
+
+    if free_terms:
+        clauses.append(_FTS_SUBQUERY)
+        params.append(" ".join(_fts_escape(t) for t in free_terms))
+
+    if not clauses:
+        return CompiledQuery(where="1=1", params=[])
+    return CompiledQuery(where=" AND ".join(clauses), params=params)
+
+
+def _compile_term(field: str, value: str, clauses: list[str], params: list[object]) -> None:
+    if field == "port":
+        if "-" in value:
+            lo, hi = _parse_port_range(value)
+            clauses.append("port BETWEEN ? AND ?")
+            params += [lo, hi]
+        else:
+            clauses.append("port = ?")
+            params.append(_parse_port(value))
+    elif field in ("service", "source", "transport"):
+        clauses.append(f"{field} = ?")
+        params.append(value.lower() if field != "source" else value)
+    elif field == "ip":
+        _compile_ip(value, clauses, params)
+    elif field == "banner":
+        clauses.append("banner LIKE ?")
+        params.append(f"%{_like_escape(value)}%")
+        clauses[-1] += " ESCAPE '\\'"
+    elif field == "has":
+        clauses.append("json_extract(data, '$.' || ?) IS NOT NULL")
+        params.append(value)
+    else:
+        raise QueryError(f"unknown field: {field!r}")
+
+
+def _compile_ip(value: str, clauses: list[str], params: list[object]) -> None:
+    try:
+        if "/" in value:
+            net = ipaddress.IPv4Network(value, strict=False)
+            clauses.append("ip_to_int(ip) BETWEEN ? AND ?")
+            params += [int(net.network_address), int(net.broadcast_address)]
+        else:
+            clauses.append("ip = ?")
+            params.append(str(ipaddress.IPv4Address(value)))
+    except ValueError as exc:
+        raise QueryError(f"invalid ip/cidr: {value!r}") from exc
+
+
+def _parse_port(value: str) -> int:
+    try:
+        p = int(value)
+    except ValueError as exc:
+        raise QueryError(f"invalid port: {value!r}") from exc
+    if not 1 <= p <= 65535:
+        raise QueryError(f"port out of range: {p}")
+    return p
+
+
+def _parse_port_range(value: str) -> tuple[int, int]:
+    lo_s, hi_s = value.split("-", 1)
+    lo, hi = _parse_port(lo_s), _parse_port(hi_s)
+    if lo > hi:
+        raise QueryError(f"port range reversed: {value!r}")
+    return lo, hi
+
+
+def _like_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _fts_escape(term: str) -> str:
+    # Quote each term so FTS5 treats it as a literal, not an operator.
+    return '"' + term.replace('"', '""') + '"'
+
+
+def register_functions(conn) -> None:
+    """Register the SQL helper `ip_to_int` used by CIDR queries."""
+    conn.create_function("ip_to_int", 1, lambda s: int(ipaddress.IPv4Address(s)), deterministic=True)

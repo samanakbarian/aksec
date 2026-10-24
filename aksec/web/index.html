@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>aksec — attack surface inventory</title>
+<style>
+  :root { --bg:#0f1115; --panel:#181b22; --fg:#e6e8ec; --muted:#9aa3b2;
+          --accent:#5b9dff; --high:#ff5c5c; --medium:#ffb020; --low:#8bd450; --info:#6ad; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif;
+         background:var(--bg); color:var(--fg); }
+  header { padding:16px 20px; border-bottom:1px solid #262a33; display:flex; align-items:center; gap:16px; }
+  header h1 { font-size:18px; margin:0; letter-spacing:.5px; }
+  header .tag { color:var(--muted); font-size:12px; }
+  main { max-width:960px; margin:0 auto; padding:20px; }
+  form { display:flex; gap:8px; margin-bottom:8px; }
+  input[type=text] { flex:1; padding:10px 12px; border-radius:8px; border:1px solid #2b303a;
+                     background:var(--panel); color:var(--fg); font-size:14px; }
+  button { padding:10px 16px; border:0; border-radius:8px; background:var(--accent);
+           color:#05101f; font-weight:600; cursor:pointer; }
+  .hint { color:var(--muted); font-size:12px; margin-bottom:16px; }
+  .hint code { background:var(--panel); padding:1px 5px; border-radius:4px; }
+  .stats { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+  .stat { background:var(--panel); border:1px solid #262a33; border-radius:10px; padding:12px 16px; }
+  .stat b { font-size:20px; display:block; }
+  .stat span { color:var(--muted); font-size:12px; }
+  .card { background:var(--panel); border:1px solid #262a33; border-radius:10px;
+          padding:12px 16px; margin-bottom:10px; }
+  .card .top { display:flex; justify-content:space-between; gap:12px; }
+  .ip { font-weight:600; color:var(--accent); text-decoration:none; }
+  .svc { color:var(--muted); font-size:13px; }
+  .banner { white-space:pre-wrap; color:var(--muted); font-size:12px; margin-top:6px;
+            max-height:120px; overflow:auto; font-family:ui-monospace,monospace; }
+  .meta { color:var(--muted); font-size:12px; margin:8px 0; }
+  .sev { display:inline-block; padding:1px 7px; border-radius:20px; font-size:11px; font-weight:700; }
+  .sev.high{background:var(--high);color:#2a0000} .sev.medium{background:var(--medium);color:#2a1a00}
+  .sev.low{background:var(--low);color:#0a2000} .sev.info{background:var(--info);color:#042}
+  .err { color:var(--high); }
+  nav { margin-left:auto; display:flex; gap:12px; }
+  nav a { color:var(--muted); cursor:pointer; text-decoration:none; }
+  nav a.active { color:var(--fg); }
+</style>
+</head>
+<body>
+<header>
+  <h1>aksec</h1><span class="tag">attack&nbsp;surface&nbsp;inventory</span>
+  <nav>
+    <a data-view="search" class="active">Search</a>
+    <a data-view="findings">Findings</a>
+  </nav>
+</header>
+<main>
+  <form id="searchForm">
+    <input type="text" id="q" placeholder="e.g.  port:443 service:https  or  ip:10.0.0.0/8  or  nginx" autofocus />
+    <button type="submit">Search</button>
+  </form>
+  <div class="hint">
+    Fields: <code>port:</code> <code>service:</code> <code>ip:</code> (host or CIDR)
+    <code>banner:</code> <code>source:</code> <code>has:tls</code>. Plain words do full-text search.
+  </div>
+  <div class="stats" id="stats"></div>
+  <div id="results"></div>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function loadStats() {
+  const r = await fetch('/api/stats'); const d = await r.json();
+  $('#stats').innerHTML =
+    `<div class="stat"><b>${d.hosts}</b><span>hosts</span></div>
+     <div class="stat"><b>${d.services}</b><span>services</span></div>` +
+    (d.top_ports.slice(0,3).map(p => `<div class="stat"><b>${p.port}</b><span>${p.count} services</span></div>`).join(''));
+}
+
+function serviceCard(s) {
+  const d = s.data || {};
+  const extra = [];
+  if (d.tls && d.tls.subject) extra.push('TLS: ' + esc(d.tls.subject));
+  if (d.http && d.http.status_code) extra.push('HTTP ' + esc(d.http.status_code));
+  return `<div class="card"><div class="top">
+      <span><a class="ip" onclick="showHost('${esc(s.ip)}')">${esc(s.ip)}</a>:${esc(s.port)}
+        <span class="svc">${esc(s.service)} / ${esc(s.transport)}</span></span>
+      <span class="svc">${esc(s.source)}</span></div>
+      ${extra.length ? `<div class="meta">${extra.join(' · ')}</div>` : ''}
+      ${s.banner ? `<div class="banner">${esc(s.banner)}</div>` : ''}</div>`;
+}
+
+async function runSearch(e) {
+  if (e) e.preventDefault();
+  const q = $('#q').value;
+  const r = await fetch('/api/search?limit=50&q=' + encodeURIComponent(q));
+  if (!r.ok) { const d = await r.json(); $('#results').innerHTML = `<p class="err">${esc(d.detail)}</p>`; return; }
+  const d = await r.json();
+  $('#results').innerHTML = `<div class="meta">${d.total} result(s)</div>` +
+    (d.services.map(serviceCard).join('') || '<p class="svc">No matches.</p>');
+}
+
+async function showHost(ip) {
+  const r = await fetch('/api/host/' + encodeURIComponent(ip)); const d = await r.json();
+  const findings = (d.findings || []).map(f =>
+    `<div class="meta"><span class="sev ${f.severity}">${f.severity}</span> :${f.port} ${esc(f.message)}</div>`).join('');
+  $('#results').innerHTML = `<div class="card"><div class="top"><span class="ip">${esc(ip)}</span>
+     <a class="svc" onclick="runSearch()">&larr; back</a></div>
+     ${findings || '<div class="meta svc">No findings.</div>'}</div>` +
+     d.services.map(serviceCard).join('');
+}
+
+async function showFindings() {
+  const r = await fetch('/api/findings?limit=300'); const d = await r.json();
+  $('#results').innerHTML = `<div class="meta">${d.count} finding(s)</div>` +
+    (d.findings.map(f => `<div class="card"><div class="top">
+       <span><span class="sev ${f.severity}">${f.severity}</span>
+         <a class="ip" onclick="showHost('${esc(f.ip)}')">${esc(f.ip)}</a>:${esc(f.port)}</span>
+       <span class="svc">${esc(f.code)}</span></div>
+       <div class="meta">${esc(f.message)}</div></div>`).join('') || '<p class="svc">No findings.</p>');
+}
+
+document.querySelectorAll('nav a').forEach(a => a.onclick = () => {
+  document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+  a.classList.add('active');
+  if (a.dataset.view === 'findings') showFindings(); else runSearch();
+});
+$('#searchForm').addEventListener('submit', runSearch);
+loadStats(); runSearch();
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{"ip": "198.51.100.10", "port": 443, "service": "https", "source": "demo", "banner": "nginx/1.24.0", "data": {"tls": {"subject": "CN=www.example.com", "not_after": "2020-01-01T00:00:00Z", "version": "TLSv1.3"}, "http": {"status_code": 200, "headers": {"Server": "nginx/1.24.0"}}}}
+{"ip": "198.51.100.10", "port": 80, "service": "http", "source": "demo", "banner": "nginx/1.24.0", "data": {"http": {"status_code": 301, "headers": {"Server": "nginx/1.24.0", "Location": "https://www.example.com/"}}}}
+{"ip": "198.51.100.10", "port": 22, "service": "ssh", "source": "demo", "banner": "SSH-2.0-OpenSSH_9.6"}
+{"ip": "198.51.100.23", "port": 3306, "service": "mysql", "source": "demo", "banner": "5.7.42-log"}
+{"ip": "198.51.100.23", "port": 23, "service": "telnet", "source": "demo", "banner": "Debian GNU/Linux"}
+{"ip": "198.51.100.42", "port": 443, "service": "https", "source": "demo", "data": {"tls": {"subject": "CN=legacy.example.net", "not_after": "2099-01-01T00:00:00Z", "version": "TLSv1.0", "self_signed": true}}}
+{"ip": "198.51.100.42", "port": 6379, "service": "redis", "source": "demo", "banner": "redis_version:7.2.3"}
+{"ip": "203.0.113.5", "port": 8080, "service": "http", "source": "demo", "banner": "Apache/2.4.58", "data": {"http": {"status_code": 200, "headers": {"Server": "Apache/2.4.58"}}}}
+{"ip": "203.0.113.5", "port": 3389, "service": "rdp", "source": "demo", "banner": ""}
