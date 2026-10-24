@@ -102,12 +102,14 @@ def _compile_term(field: str, value: str, clauses: list[str], params: list[objec
 def _compile_ip(value: str, clauses: list[str], params: list[object]) -> None:
     try:
         if "/" in value:
-            net = ipaddress.IPv4Network(value, strict=False)
-            clauses.append("ip_to_int(ip) BETWEEN ? AND ?")
-            params += [int(net.network_address), int(net.broadcast_address)]
+            # Validate here; membership is evaluated per-row by the ip_in_cidr
+            # SQL function, which handles both IPv4 and IPv6.
+            net = ipaddress.ip_network(value, strict=False)
+            clauses.append("ip_in_cidr(ip, ?)")
+            params.append(str(net))
         else:
             clauses.append("ip = ?")
-            params.append(str(ipaddress.IPv4Address(value)))
+            params.append(str(ipaddress.ip_address(value)))
     except ValueError as exc:
         raise QueryError(f"invalid ip/cidr: {value!r}") from exc
 
@@ -149,6 +151,15 @@ def _fts_escape(term: str) -> str:
     return '"' + term.replace('"', '""') + '"'
 
 
+def _ip_in_cidr(ip: str | None, network: str) -> int:
+    if not ip:
+        return 0
+    try:
+        return int(ipaddress.ip_address(ip) in ipaddress.ip_network(network, strict=False))
+    except ValueError:
+        return 0
+
+
 def register_functions(conn) -> None:
-    """Register the SQL helper `ip_to_int` used by CIDR queries."""
-    conn.create_function("ip_to_int", 1, lambda s: int(ipaddress.IPv4Address(s)), deterministic=True)
+    """Register SQL helpers used by IP/CIDR queries (IPv4 and IPv6)."""
+    conn.create_function("ip_in_cidr", 2, _ip_in_cidr, deterministic=True)

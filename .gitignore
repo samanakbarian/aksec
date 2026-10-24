@@ -12,3 +12,7 @@ venv/
 *.sqlite
 *.sqlite3
 !examples/*.ndjson
+
+# Per-tenant data directory and local auth secrets
+/data/
+config/auth.json

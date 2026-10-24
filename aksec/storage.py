@@ -42,6 +42,16 @@ CREATE INDEX IF NOT EXISTS idx_service_ip      ON service(ip);
 CREATE VIRTUAL TABLE IF NOT EXISTS service_fts USING fts5(
     ip UNINDEXED, banner, data
 );
+
+-- Saved searches for simple alerting: `baseline` is the JSON list of service
+-- keys that matched at the last run, so a later run can report what is new.
+CREATE TABLE IF NOT EXISTS saved_search (
+    name       TEXT PRIMARY KEY,
+    query      TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_run   TEXT,
+    baseline   TEXT NOT NULL DEFAULT '[]'
+);
 """
 
 
@@ -183,6 +193,69 @@ class Store:
             rows = self._conn.execute("SELECT * FROM service ORDER BY ip, port").fetchall()
         for r in rows:
             yield self._row_to_dict(r)
+
+    def query_keys(self, where: str, params: list[Any]) -> set[str]:
+        """All service keys ('ip|port|transport') matching a compiled query."""
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT ip, port, transport FROM service WHERE {where}", params
+            ).fetchall()
+        return {f"{r['ip']}|{r['port']}|{r['transport']}" for r in rows}
+
+    def get_service(self, key: str) -> dict[str, Any] | None:
+        ip, port, transport = key.split("|", 2)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM service WHERE ip=? AND port=? AND transport=?",
+                (ip, int(port), transport),
+            ).fetchone()
+        return self._row_to_dict(row) if row else None
+
+    # -- saved searches -------------------------------------------------------
+
+    def save_search(self, name: str, query: str) -> None:
+        from datetime import datetime, timezone
+
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO saved_search (name, query, created_at)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(name) DO UPDATE SET query=excluded.query""",
+                (name, query, datetime.now(timezone.utc).isoformat()),
+            )
+            self._conn.commit()
+
+    def list_searches(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM saved_search ORDER BY name").fetchall()
+        return [self._search_to_dict(r) for r in rows]
+
+    def get_search(self, name: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM saved_search WHERE name=?", (name,)).fetchone()
+        return self._search_to_dict(row) if row else None
+
+    def delete_search(self, name: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM saved_search WHERE name=?", (name,))
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def update_search_baseline(self, name: str, baseline: set[str]) -> None:
+        from datetime import datetime, timezone
+
+        with self._lock:
+            self._conn.execute(
+                "UPDATE saved_search SET baseline=?, last_run=? WHERE name=?",
+                (json.dumps(sorted(baseline)), datetime.now(timezone.utc).isoformat(), name),
+            )
+            self._conn.commit()
+
+    @staticmethod
+    def _search_to_dict(r: sqlite3.Row) -> dict[str, Any]:
+        d = dict(r)
+        d["baseline"] = set(json.loads(d.get("baseline") or "[]"))
+        return d
 
     @staticmethod
     def _row_to_dict(r: sqlite3.Row) -> dict[str, Any]:

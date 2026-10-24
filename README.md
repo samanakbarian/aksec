@@ -36,8 +36,13 @@ aksec findings  --db demo.db
 aksec export --format csv   --db demo.db --out inventory.csv
 aksec export --format ndjson --db demo.db > inventory.ndjson
 
+# Saved searches + simple alerting
+aksec watch add new-rdp port:3389 --db demo.db
+aksec watch run new-rdp --db demo.db      # reports services added/removed since last run
+
 # Or run the web UI + API
-aksec serve --db demo.db           # http://127.0.0.1:8000
+aksec serve --db demo.db                           # open mode
+aksec serve --auth config/auth.example.json        # multi-tenant, API-key required
 ```
 
 ## Query language
@@ -56,6 +61,7 @@ aksec serve --db demo.db           # http://127.0.0.1:8000
 | `seen_before:2026-01-01`| last seen before a date          |
 | `nginx 2.4`     | free words → full-text search            |
 
+`ip:` accepts both IPv4 and IPv6 addresses and CIDRs (e.g. `ip:2001:db8::/32`).
 Terms are AND-ed. Every value is bound as a SQL parameter, so queries cannot
 inject SQL.
 
@@ -69,6 +75,10 @@ inject SQL.
 | `GET /api/findings`  | advisory exposure findings                |
 | `GET /api/export?format=csv` | export inventory (`ndjson`/`csv`) |
 
+When started with an auth config (`--auth`), every `/api` request requires an
+`X-API-Key` header and is served from that key's isolated tenant database. See
+[`docs/MULTI_TENANCY.md`](docs/MULTI_TENANCY.md).
+
 ## Layout
 
 ```
@@ -76,10 +86,13 @@ aksec/
   config.py      runtime settings (env-driven)
   models.py      Observation schema (the ingest contract)
   targets.py     IP/CIDR + port expansion with exclusions
-  storage.py     SQLite store (services + FTS index)
-  query.py       query-language -> safe parameterised SQL
+  storage.py     SQLite store (services, FTS index, saved searches)
+  query.py       query-language -> safe parameterised SQL (IPv4 + IPv6)
   search.py      high-level search
   analysis.py    exposure heuristics (findings)
+  vulndb.py      curated version-based advisories
+  watch.py       saved searches + simple alerting
+  auth.py        API-key auth + per-tenant database resolution
   ingest.py      NDJSON loader
   export.py      NDJSON / CSV export
   adapters/      transform existing tool output (e.g. nmap XML) into the contract

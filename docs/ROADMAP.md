@@ -28,21 +28,29 @@ represented only by the ingest contract.
 - [x] Export: NDJSON / CSV out (CLI `export` + `GET /api/export`)
 - [x] Collector adapter that *transforms existing tool output* into the ingest
       contract — nmap XML (`import-nmap`), no scanning logic in this repo
-- [ ] IPv6 support across models, storage and query
-- [ ] More findings: default-credential indicators, known-vulnerable version
-      ranges
-- [ ] Saved searches and simple alerting ("tell me when a new 3389 appears")
-- [ ] Authentication and per-tenant data isolation on the API
+- [x] IPv6 support across models, storage and query (single address and CIDR,
+      via an `ip_in_cidr` SQL function that handles v4 and v6)
+- [x] Known-vulnerable version ranges: a small curated `vulndb` turning service
+      versions into `known-vuln` findings (pluggable with a real feed later)
+- [x] Saved searches and simple alerting (`watch add/list/run/rm`): each run
+      reports services that appeared or disappeared since the last run
+- [x] Authentication and per-tenant data isolation on the API: `X-API-Key` →
+      tenant, each tenant in its own database; open mode when no keys are set
+- [ ] Default-credential indicators
 
 ## Medium term (v0.3+)
 
 - [ ] Pluggable storage backend (PostgreSQL + OpenSearch/ClickHouse) behind the
       existing `Store` interface
+- [ ] Replace the curated `vulndb` with a real feed (NVD / OSV) behind the same
+      `match_version()` interface
 - [ ] Batch analysis job writing findings to a derived table
 - [ ] Asset grouping / tagging (by team, environment, business unit)
 - [ ] Diffing: "what changed on my attack surface since last week"
-- [ ] Web UI: facets, pagination, host timeline, finding triage/acknowledge
-- [ ] Role-based access control
+- [ ] Web UI: facets, pagination, host timeline, finding triage/acknowledge,
+      multi-tenant login
+- [ ] Role-based access control (beyond per-tenant isolation)
+- [ ] Scheduled alerting: run saved searches on a timer and notify
 
 ## Explicitly out of scope for this repository
 

@@ -1,0 +1,7 @@
+{
+  "data_dir": "data",
+  "keys": {
+    "replace-with-a-long-random-secret-for-acme": "acme",
+    "replace-with-a-long-random-secret-for-globex": "globex"
+  }
+}

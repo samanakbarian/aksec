@@ -23,10 +23,19 @@ def test_port_range():
     assert c.params == [8000, 8100]
 
 
-def test_cidr_expands_to_int_range():
+def test_cidr_uses_membership_function():
     c = compile_query("ip:10.0.0.0/8")
-    assert "ip_to_int(ip) BETWEEN ? AND ?" in c.where
-    assert c.params[0] < c.params[1]
+    assert "ip_in_cidr(ip, ?)" in c.where
+    assert c.params == ["10.0.0.0/8"]
+
+
+def test_ipv6_single_and_cidr():
+    c = compile_query("ip:2001:db8::1")
+    assert "ip = ?" in c.where
+    assert c.params == ["2001:db8::1"]
+    c2 = compile_query("ip:2001:db8::/32")
+    assert "ip_in_cidr(ip, ?)" in c2.where
+    assert c2.params == ["2001:db8::/32"]
 
 
 def test_free_text_uses_fts():

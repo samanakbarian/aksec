@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+from .vulndb import match_version
+
 Severity = Literal["info", "low", "medium", "high"]
 
 # Services that are risky to expose directly to an untrusted network.
@@ -71,6 +73,42 @@ def analyze_service(row: dict[str, Any]) -> list[Finding]:
     if isinstance(ssh, dict):
         findings += _analyze_ssh(ip, port, ssh)
 
+    findings += _analyze_versions(ip, port, row)
+
+    return findings
+
+
+def _version_candidates(row: dict[str, Any]) -> list[tuple[str, str]]:
+    """Collect (product, version_text) pairs from the richest signals available."""
+    data = row.get("data") or {}
+    out: list[tuple[str, str]] = []
+
+    nmap = data.get("nmap_service")
+    if isinstance(nmap, dict) and nmap.get("product"):
+        version = nmap.get("version") or ""
+        out.append((str(nmap["product"]).lower(), f"{nmap['product']} {version}".strip()))
+
+    banner = row.get("banner")
+    if banner:
+        out.append((row.get("service", ""), banner))
+        # "nginx/1.24.0" or "OpenSSH_9.6" -> product token + the banner as version text
+        token = banner.replace("/", " ").replace("_", " ").split()
+        if token:
+            out.append((token[0].lower(), banner))
+
+    out.append((row.get("service", ""), row.get("service", "")))
+    return out
+
+
+def _analyze_versions(ip: str, port: int, row: dict[str, Any]) -> list[Finding]:
+    seen: set[str] = set()
+    findings: list[Finding] = []
+    for product, text in _version_candidates(row):
+        for rule in match_version(product, text):
+            if rule.note in seen:
+                continue
+            seen.add(rule.note)
+            findings.append(Finding(ip, port, rule.severity, "known-vuln", rule.note))
     return findings
 
 

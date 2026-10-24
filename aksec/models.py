@@ -27,8 +27,9 @@ class Observation(BaseModel):
 
     @field_validator("ip")
     @classmethod
-    def _valid_ipv4(cls, v: str) -> str:
-        return str(ipaddress.IPv4Address(v.strip()))
+    def _valid_ip(cls, v: str) -> str:
+        # Accept IPv4 or IPv6; store the canonical (compressed) form.
+        return str(ipaddress.ip_address(v.strip()))
 
     @field_validator("service")
     @classmethod
